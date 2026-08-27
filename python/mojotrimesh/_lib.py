@@ -20,6 +20,7 @@ F = ctypes.c_double
 
 _SIGNATURES = {
     "mt_face_areas": ([I, I, I, I], None),
+    "mt_points_on_segment": ([I, I, I, I] + [F] * 7, I),
     "mt_sample_surface": ([I] * 9, None),
     "mt_remove_close": ([I, I, I, I, F], I),
     "mt_ray_hits": ([I] * 10, I),

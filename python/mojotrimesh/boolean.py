@@ -10,6 +10,7 @@ import math
 
 import numpy as np
 
+from ._lib import addr, lib
 from .base import Trimesh
 
 _EPSILON = 1.0e-8
@@ -20,11 +21,7 @@ _SPANNING = 3
 
 
 def _dot3(first, second):
-    return (
-        first[0] * second[0]
-        + first[1] * second[1]
-        + first[2] * second[2]
-    )
+    return first.dot(second)
 
 
 def _cross3(first, second):
@@ -252,6 +249,24 @@ def _polygons(mesh):
     return result
 
 
+def _points_on_segment(candidates, first, second, amounts, indices):
+    return int(
+        lib().mt_points_on_segment(
+            addr(candidates, np.float64),
+            addr(amounts, np.float64),
+            addr(indices, np.int64),
+            len(candidates),
+            float(first[0]),
+            float(first[1]),
+            float(first[2]),
+            float(second[0]),
+            float(second[1]),
+            float(second[2]),
+            _EPSILON,
+        )
+    )
+
+
 def _to_mesh(polygons):
     vertices = []
     faces = []
@@ -277,6 +292,12 @@ def _to_mesh(polygons):
         for vertex in polygon.vertices:
             vertex_index(vertex.position)
     candidates = np.asarray(vertices, dtype=np.float64)
+    edge_amounts = np.empty(len(candidates), dtype=np.float64)
+    edge_indices = np.empty(len(candidates), dtype=np.int64)
+    candidates_addr = addr(candidates, np.float64)
+    edge_amounts_addr = addr(edge_amounts, np.float64)
+    edge_indices_addr = addr(edge_indices, np.int64)
+    points_on_segment = lib().mt_points_on_segment
 
     for polygon in polygons:
         if len(polygon.vertices) < 3:
@@ -290,16 +311,20 @@ def _to_mesh(polygons):
             length2 = _dot3(edge, edge)
             if length2 <= _EPSILON * _EPSILON:
                 continue
-            delta = candidates - first
-            amounts = (delta @ edge) / length2
-            valid = (amounts >= -_EPSILON) & (amounts < 1.0 - _EPSILON)
-            projected_delta = delta[valid] - amounts[valid, None] * edge
-            on_edge = np.einsum(
-                "ij,ij->i", projected_delta, projected_delta
-            ) <= (2.0 * _EPSILON) ** 2
-            edge_indices = np.flatnonzero(valid)[on_edge]
-            order = np.argsort(amounts[edge_indices], kind="stable")
-            for point_index in edge_indices[order]:
+            edge_count = points_on_segment(
+                candidates_addr,
+                edge_amounts_addr,
+                edge_indices_addr,
+                len(candidates),
+                float(first[0]),
+                float(first[1]),
+                float(first[2]),
+                float(second[0]),
+                float(second[1]),
+                float(second[2]),
+                _EPSILON,
+            )
+            for point_index in edge_indices[:edge_count]:
                 point = candidates[point_index]
                 if (
                     not boundary

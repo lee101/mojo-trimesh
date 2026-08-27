@@ -3,6 +3,7 @@ import pytest
 import trimesh
 
 import mojotrimesh as mt
+from mojotrimesh.boolean import _points_on_segment
 
 
 def overlapping_boxes():
@@ -67,3 +68,28 @@ def test_boolean_volume_validation():
         mt.union([triangle, triangle])
     result = mt.union([triangle], check_volume=False)
     assert len(result.faces) == 1
+
+
+@pytest.mark.parametrize("count", [1, 3, 4, 5, 9])
+def test_points_on_segment_simd_tail(count):
+    candidates = np.column_stack(
+        (
+            np.linspace(1.0, 0.0, count),
+            np.zeros(count),
+            np.zeros(count),
+        )
+    )
+    candidates = np.ascontiguousarray(candidates, dtype=np.float64)
+    amounts = np.empty(count, dtype=np.float64)
+    indices = np.empty(count, dtype=np.int64)
+    found = _points_on_segment(
+        candidates,
+        np.array([0.0, 0.0, 0.0]),
+        np.array([1.0, 0.0, 0.0]),
+        amounts,
+        indices,
+    )
+    valid = np.flatnonzero(candidates[:, 0] < 1.0)
+    expected = valid[np.argsort(candidates[valid, 0], kind="stable")]
+    assert found == len(expected)
+    assert np.array_equal(indices[:found], expected)

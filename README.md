@@ -82,21 +82,24 @@ the best repeated wall time. Relative is `trimesh / mojo-trimesh`.
 
 | case | mojo-trimesh | trimesh | relative |
 | --- | ---: | ---: | ---: |
-| sample_surface, 1M points / 5,120 faces | 161.70 ms | 529.14 ms | 3.27x faster |
-| sample_surface weighted, 1M / 5,120 faces | 159.74 ms | 511.64 ms | 3.20x faster |
-| sample_surface_even, 1,000 points | 2.81 ms | 4.04 ms | 1.43x faster |
-| intersects_first, 20k rays / 320 faces | 85.43 ms | 2899.47 ms | 33.94x faster |
-| intersects_location, 20k rays / 320 faces | 143.42 ms | 3130.61 ms | 21.83x faster |
-| contains, 20k points / 320 faces | 91.84 ms | 1713.55 ms | 18.66x faster |
-| difference, two rotated boxes | 9.34 ms | 0.47 ms | 0.05x slower |
+| sample_surface, 1M points / 5,120 faces | 133.80 ms | 460.75 ms | 3.44x faster |
+| sample_surface weighted, 1M / 5,120 faces | 140.67 ms | 536.91 ms | 3.82x faster |
+| sample_surface_even, 1,000 points | 2.96 ms | 4.26 ms | 1.44x faster |
+| intersects_first, 20k rays / 320 faces | 103.04 ms | 3333.91 ms | 32.36x faster |
+| intersects_location, 20k rays / 320 faces | 171.14 ms | 2993.88 ms | 17.49x faster |
+| contains, 20k points / 320 faces | 121.72 ms | 1823.54 ms | 14.98x faster |
+| difference, two rotated boxes | 6.17 ms | 0.40 ms | 0.07x slower |
 
 The remaining slower row is an intentional limitation, not a benchmark
 omission. BSP boolean topology is useful without an external engine, but
 manifold3d is highly optimized C++ and remains much faster on small meshes.
 
-No GPU path is provided. These kernels operate on caller-owned host arrays;
-moving them to a device would add transfer and launch overhead that this
-benchmark does not measure.
+No GPU path is provided. The numeric kernels are below roughly 2 flops per byte
+moved, while BSP construction is variable-size and topology-dependent. Moving
+caller-owned host arrays to a device would add transfer and launch overhead to
+workloads that are not compute-dense enough to recover it. The BSP stages are
+also sequentially dependent, and the candidate sets in each independent edge
+scan are too small to amortize CPU thread-launch overhead.
 
 ## How it works
 
@@ -117,7 +120,9 @@ but its cost remains `rays * triangles`.
 
 Booleans use a BSP constructive-solid-geometry implementation. Polygons are
 split against planes, clipped according to the requested set operation, and
-triangulated after resolving T-junctions along split edges. Variable-size
+triangulated after resolving T-junctions along split edges. Candidate vertices
+for each split edge are filtered in float64 SIMD chunks with a scalar tail;
+reusable output buffers cross the FFI boundary without copies. Variable-size
 topology stays in Python/NumPy; fixed-width area and query work stays in Mojo.
 
 ## Not covered

@@ -45,6 +45,98 @@ def mt_face_areas(
         areas[f] = 0.5 * sqrt(cx * cx + cy * cy + cz * cz)
 
 
+@export("mt_points_on_segment")
+def mt_points_on_segment(
+    points_addr: Int,
+    amounts_addr: Int,
+    indices_addr: Int,
+    point_count: Int,
+    first_x: Float64,
+    first_y: Float64,
+    first_z: Float64,
+    second_x: Float64,
+    second_y: Float64,
+    second_z: Float64,
+    epsilon: Float64,
+) abi("C") -> Int:
+    var points = fp(points_addr)
+    var amounts = fp(amounts_addr)
+    var indices = ip(indices_addr)
+    var edge_x = second_x - first_x
+    var edge_y = second_y - first_y
+    var edge_z = second_z - first_z
+    var length2 = edge_x * edge_x + edge_y * edge_y + edge_z * edge_z
+    var limit = 1.0 - epsilon
+    var distance_limit2 = 4.0 * epsilon * epsilon
+    var found = 0
+
+    comptime W = simd_width_of[DType.float64]()
+    var i = 0
+    while i + W <= point_count:
+        var delta_x = (points + i * 3).strided_load[width=W](3) - first_x
+        var delta_y = (points + i * 3 + 1).strided_load[width=W](3) - first_y
+        var delta_z = (points + i * 3 + 2).strided_load[width=W](3) - first_z
+        var amount = (
+            delta_x * edge_x + delta_y * edge_y + delta_z * edge_z
+        ) / length2
+        var projected_x = delta_x - amount * edge_x
+        var projected_y = delta_y - amount * edge_y
+        var projected_z = delta_z - amount * edge_z
+        var distance2 = (
+            projected_x * projected_x
+            + projected_y * projected_y
+            + projected_z * projected_z
+        )
+        var valid = (
+            amount.ge(-epsilon)
+            & amount.lt(limit)
+            & distance2.le(distance_limit2)
+        )
+        for lane in range(W):
+            if valid[lane]:
+                var lane_amount = amount[lane]
+                var position = found
+                while position > 0 and amounts[position - 1] > lane_amount:
+                    amounts[position] = amounts[position - 1]
+                    indices[position] = indices[position - 1]
+                    position -= 1
+                amounts[position] = lane_amount
+                indices[position] = Int64(i + lane)
+                found += 1
+        i += W
+
+    while i < point_count:
+        var delta_x = points[i * 3] - first_x
+        var delta_y = points[i * 3 + 1] - first_y
+        var delta_z = points[i * 3 + 2] - first_z
+        var amount = (
+            delta_x * edge_x + delta_y * edge_y + delta_z * edge_z
+        ) / length2
+        var projected_x = delta_x - amount * edge_x
+        var projected_y = delta_y - amount * edge_y
+        var projected_z = delta_z - amount * edge_z
+        var distance2 = (
+            projected_x * projected_x
+            + projected_y * projected_y
+            + projected_z * projected_z
+        )
+        if (
+            amount >= -epsilon
+            and amount < limit
+            and distance2 <= distance_limit2
+        ):
+            var position = found
+            while position > 0 and amounts[position - 1] > amount:
+                amounts[position] = amounts[position - 1]
+                indices[position] = indices[position - 1]
+                position -= 1
+            amounts[position] = amount
+            indices[position] = Int64(i)
+            found += 1
+        i += 1
+    return found
+
+
 @export("mt_sample_surface")
 def mt_sample_surface(
     vertices_addr: Int,
