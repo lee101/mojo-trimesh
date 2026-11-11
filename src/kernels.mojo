@@ -229,7 +229,7 @@ def mt_remove_close(
             var dz = z - z0
             var close = (dx * dx + dy * dy + dz * dz).le(radius2)
             var increments = close.cast[DType.int64]()
-            degree.store(j, degree.load[width=W](j) + increments)
+            degree.store(j, degree.unsafe_load[width=W](j) + increments)
             degree_i += increments.reduce_add()
             j += W
         while j < point_count:
@@ -257,11 +257,11 @@ def mt_remove_close(
             var dy = y - y0
             var dz = z - z0
             var close = (dx * dx + dy * dy + dz * dz).le(radius2)
-            var remove_i = close & degree_i_vec.ge(degree.load[width=W](j))
+            var remove_i = close & degree_i_vec.ge(degree.unsafe_load[width=W](j))
             if remove_i.reduce_bit_count() != 0:
                 mask[i] = 0
             var remove_j = close & ~remove_i
-            mask.store(j, remove_j.select(zeros, mask.load[width=W](j)))
+            mask.store(j, remove_j.select(zeros, mask.unsafe_load[width=W](j)))
             j += W
         while j < point_count:
             var dx = points[j * 3] - x0
@@ -277,7 +277,7 @@ def mt_remove_close(
     var kept = 0
     i = 0
     while i + W <= point_count:
-        kept += Int(mask.load[width=W](i).reduce_add())
+        kept += Int(mask.unsafe_load[width=W](i).reduce_add())
         i += W
     while i < point_count:
         kept += Int(mask[i])
